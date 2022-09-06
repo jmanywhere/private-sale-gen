@@ -1,0 +1,14 @@
+dependencies:
+  # - <organization/repo>@<version>
+  - OpenZeppelin/openzeppelin-contracts@4.6.0
+  # - smartcontractkit/chainlink@1.6.0
+compiler:
+  solc:
+    remappings:
+      - "@openzeppelin=OpenZeppelin/openzeppelin-contracts@4.6.0"
+      # - "@chainlink=smartcontractkit/chainlink@1.6.0"
+networks:
+  development:
+    cmd_settings:
+      default_balance: 1000
+dotenv: .env
