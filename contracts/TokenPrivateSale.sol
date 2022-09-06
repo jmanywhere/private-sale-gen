@@ -156,6 +156,21 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         emit TokenSet(_token);
     }
 
+    function addWhitelist(address _user) external onlyOwner {
+        require(!whitelist[_user], "Already whitelisted");
+        whitelist[_user] = true;
+        whitelistedUsers++;
+    }
+
+    function whitelistMultiple(address[] calldata _users) external onlyOwner {
+        uint256 len = _users.length;
+        require(len > 0, "Non zero");
+        for (uint256 i = 0; i < len; i++) {
+            whitelist[_users[i]] = true;
+        }
+        whitelistedUsers += len;
+    }
+
     /// @notice Withdraw the raised funds
     /// @dev withdraw the raised funds to the owner wallet
     function withdraw() external payable onlyOwner {
