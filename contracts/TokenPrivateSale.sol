@@ -11,21 +11,23 @@ contract TokenPresale is Ownable, ReentrancyGuard {
 
     struct UserInfo {
         uint256 bought;
+        uint256 whitelistBought;
         bool claimed;
     }
 
     uint256 public immutable HARD_CAP;
+    uint256 public immutable SOFT_CAP;
     uint256 public immutable MIN_BUY; // per wallet
     uint256 public immutable MAX_BUY; // per wallet
 
-    uint256 public tokenPerRaise = 525; // tokens per 1 ETH RAISE_TOKEN
-    address public fundWallet;
+    uint256 public tokenPerRaise; // tokens per 1 ETH RAISE_TOKEN
+    uint256 public immutable BUY_INTERVAL;
+    uint256 public constant BASE_INTERVAL = 0.01 ether;
     uint256 public constant BARE_MIN = 0.0001 ether;
-    uint256 public immutable BUY_INTERVAL = 0.01 ether;
 
-    uint256 public immutable wl_duration = 24 hours;
-    uint256 public immutable public_duration = 24 hours;
-    uint256 public immutable saleStart = 1651489200; //MAY 2ND 2022 7AM EST
+    uint256 public immutable wl_duration;
+    uint256 public immutable public_duration;
+    uint256 public immutable saleStart; //MAY 2ND 2022 7AM EST
 
     IERC20 public BUY_TOKEN;
     IERC20 public RAISE_TOKEN;
@@ -33,6 +35,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
 
     uint256 public totalRaised;
     uint256 public whitelistMin;
+    uint256 public tokensToSell;
 
     mapping(address => UserInfo) public userInfo;
     mapping(address => bool) public whitelist;
@@ -40,6 +43,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
     event BoughtToken(address indexed _user, uint256 amount, uint256 _raised);
     event TokenClaimed(address indexed _user, uint256 amount);
     event TokenSet(address _token);
+    event FundsClaimed(address _to, uint256 _amount);
 
     receive() external payable {
         // We do nothing... if people send funds directly that's on them... use the function people
@@ -61,7 +65,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
     3 - hardcap (can be zero for no cap)
     4 - whitelist token amount to hold for whitelist (if zero the whitelist is not created) IF WHITELIST ADDRESS == ADDRESS(0) 
           then whitelist will need to be added to the mapping
-    5 - whitelist timelimit (can be zero to make it manual)
+    5 - whitelist timelimit IN HOURS (can be zero to make it manual)
     6 - total tokens to be sold (can be zero if number is pending or airdropped)
     7 - public duration IN HOURS (can be zero, owner will have to manually close the public sale duration)
     8 - start time
@@ -72,8 +76,9 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         address _owner,
         address _whitelistToken,
         address _collectToken,
-        uint256[] calldata configs
+        uint256[8] calldata configs
     ) {
+        require(_owner != address(0)); // dev:  Need a new owner
         transferOwnership(_owner);
         if (_token != address(0)) BUY_TOKEN = IERC20(_token);
         if (_collectToken != address(0)) RAISE_TOKEN = IERC20(_collectToken);
@@ -82,6 +87,11 @@ contract TokenPresale is Ownable, ReentrancyGuard {
             require(configs[4] > 0, "CF4"); // dev: Wrong config on 4, can't add whitelist token and zero requirement.
             whitelistMin = configs[4];
         }
+        wl_duration = configs[5] * 1 hours;
+        public_duration = configs[7] * 1 hours;
+        SOFT_CAP = configs[2];
+        HARD_CAP = configs[3];
+        require((SOFT_CAP + HARD_CAP) % BASE_INTERVAL == 0, "CF2|3"); //dev: Get good caps, these suck
 
         require(config[0] > BARE_MIN, "CF0-P"); // dev: Wrong config on 0 pre actually writting the info
         if (config[0] >= 0.01 ether) BUY_INTERVAL = 0.01 ether;
@@ -89,6 +99,8 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         MIN_BUY = configs[0];
         MAX_BUY = configs[1];
         require(MAX_BUY > MIN_BUY, "CF1"); // dev: Max buy is less than min buy
+        tokensToSell = configs[6];
+        saleStart = configs[8];
     }
 
     function buyToken() external payable nonReentrant {
@@ -127,23 +139,27 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         emit TokenClaimed(msg.sender, claimable);
     }
 
+    /// @notice Set the token if the token was not set originally
+    /// @param _token the address of the new token;
     function setToken(address _token) external onlyOwner {
-        require(address(STAKE) == address(0), "Token Set");
-        STAKE = IERC20(_token);
+        require(address(BUY_TOKEN) == address(0), "Token Set");
+        BUY_TOKEN = IERC20(_token);
         emit TokenSet(_token);
     }
 
-    function totalRaise() public view returns (uint256) {
-        return address(this).balance;
-    }
-
+    /// @notice Withdraw the raised funds
+    /// @dev withdraw the raised funds to the owner wallet
     function withdraw() external payable onlyOwner {
-        uint256 raised = totalRaise();
-        (bool success, ) = payable(fundWallet).call{value: raised}("");
-        require(success, "Unsuccessful, withdraw");
-    }
-
-    function setFundWallet(address _newFund) external onlyOwner {
-        fundWallet = _newFund;
+        uint256 raised;
+        bool succ;
+        if (address(RAISE_TOKEN) == address(0)) {
+            raised = address(this).balance;
+            (succ, ) = payable(msg.sender).call{value: raised}("");
+            require(succ, "Unsuccessful, withdraw");
+        } else {
+            raised = RAISE_TOKEN.balanceOf(address(this));
+            succ = RAISE_TOKEN.transfer(msg.sender, raised);
+        }
+        emit FundsClaimed(msg.sender, raised);
     }
 }
