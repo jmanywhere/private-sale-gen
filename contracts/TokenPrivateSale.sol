@@ -27,11 +27,17 @@ contract TokenPresale is Ownable, ReentrancyGuard {
 
     uint256 public immutable wl_duration;
     uint256 public immutable public_duration;
-    uint256 public immutable saleStart; //MAY 2ND 2022 7AM EST
+    uint256 public immutable saleStart;
+
+    bool public wl_end;
+    bool public public_end;
+    bool public claimable;
 
     IERC20 public BUY_TOKEN;
     IERC20 public RAISE_TOKEN;
     IERC20 public WHITELIST_TOKEN;
+
+    uint256 public whitelistedUsers;
 
     uint256 public totalRaised;
     uint256 public whitelistMin;
@@ -58,7 +64,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
     @param _owner project owner address
     @param _whitelistToken token address needed for whitelist
     @param _collectToken token address to be collected (ETH or OTHER) if address == address(0) use native ETH
-    @param _configs The configs array are the following parameters:
+    @param configs The configs array are the following parameters:
     0 - MIN BUY (has to be at least 0.0001 ether, if MIN is larger than 0.01 the min buy threshold is 0.01)
     1 - MAX BUY (if zero there will be no MAX)
     2 - softcap (can be zero for no soft cap)
@@ -93,8 +99,8 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         HARD_CAP = configs[3];
         require((SOFT_CAP + HARD_CAP) % BASE_INTERVAL == 0, "CF2|3"); //dev: Get good caps, these suck
 
-        require(config[0] > BARE_MIN, "CF0-P"); // dev: Wrong config on 0 pre actually writting the info
-        if (config[0] >= 0.01 ether) BUY_INTERVAL = 0.01 ether;
+        require(configs[0] > BARE_MIN, "CF0-P"); // dev: Wrong config on 0 pre actually writting the info
+        if (configs[0] >= 0.01 ether) BUY_INTERVAL = 0.01 ether;
         else BUY_INTERVAL = BARE_MIN;
         MIN_BUY = configs[0];
         MAX_BUY = configs[1];
@@ -103,40 +109,47 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         saleStart = configs[8];
     }
 
-    function buyToken() external payable nonReentrant {
-        uint256 amount = msg.value;
-        require(amount > 0, "Need money");
-        require(amount % BUY_INTERVAL == 0, "Only intervals of 0.01 BNB");
+    function buyToken(uint256 _otherAmount) external payable nonReentrant {
+        uint256 amount;
+        if (address(RAISE_TOKEN) == address(0)) amount = msg.value;
+        else {
+            require(msg.value == 0);
+            amount = _otherAmount;
+        }
+
         require(
-            block.timestamp < saleStart + duration &&
-                block.timestamp >= saleStart,
-            "Sale not running"
+            amount > 0 && amount % BUY_INTERVAL == 0,
+            "Amount or Interval invalid"
         );
+
+        bool isWhitelist = checkTimeLimits();
+
         UserInfo storage user = userInfo[msg.sender];
         require(
             user.bought < MAX_BUY && user.bought + amount <= MAX_BUY,
             "User Cap reached"
         );
-        uint256 raised = totalRaise();
+        uint256 raised = totalRaised;
         require(
             raised < HARD_CAP && raised + amount <= HARD_CAP,
             "Main cap reached"
         );
-        user.bought += amount;
+        if (isWhitelist) user.whitelistBought += amount;
+        else user.bought += amount;
         totalRaised += amount;
 
         emit BoughtToken(msg.sender, amount, totalRaised);
     }
 
     function claimToken() external nonReentrant {
-        require(block.timestamp > saleStart + duration, "Sale running");
-        require(address(STAKE) != address(0), "Token not yet available");
+        require(claimable, "Sale running");
+        require(address(BUY_TOKEN) != address(0), "Token not yet available");
         UserInfo storage user = userInfo[msg.sender];
         require(!user.claimed && user.bought > 0, "Already claimed");
         user.claimed = true;
-        uint256 claimable = user.bought * tokenPerBNB;
-        STAKE.safeTransfer(msg.sender, claimable);
-        emit TokenClaimed(msg.sender, claimable);
+        uint256 u_claim = user.bought * tokenPerRaise;
+        BUY_TOKEN.safeTransfer(msg.sender, u_claim);
+        emit TokenClaimed(msg.sender, u_claim);
     }
 
     function startSale(uint256 _startTimestamp) external onlyOwner {
@@ -146,6 +159,62 @@ contract TokenPresale is Ownable, ReentrancyGuard {
             require(saleStart == 0 && _startTimestamp > block.timestamp); // dev: Already set
             saleStart = _startTimestamp;
         }
+    }
+
+    function checkTimeLimits() internal returns (bool whitelist) {
+        require(block.timestamp > saleStart); // dev: Not started yet
+        // if no duration of whitelist added
+        if (wl_duration == 0) {
+            if (wl_end) {
+                if (public_duration == 0) {
+                    if (public_end) {
+                        require(false); // dev: Sale ended
+                    }
+                } else {
+                    require(
+                        block.timestamp <
+                            saleStart + wl_duration + public_duration
+                    ); // dev: Sale over
+                }
+                return false;
+            } else {
+                require(getWhitelistStatus(msg.sender)); // dev: Not whitelisted
+                return true;
+            }
+        } else {
+            if (block.timestamp < saleStart + wl_duration) {
+                require(getWhitelistStatus(msg.sender)); // dev: Not whitelisted
+                return true;
+            } else {
+                if (public_duration == 0) {
+                    if (public_end) {
+                        require(false); // dev: Sale ended
+                    }
+                } else {
+                    require(
+                        block.timestamp <
+                            saleStart + wl_duration + public_duration
+                    ); // dev: Sale over
+                }
+                return false;
+            }
+        }
+    }
+
+    function getWhitelistStatus(address _user) internal returns (bool) {
+        if (address(WHITELIST_TOKEN) == address(0)) return whitelist[_user];
+        uint256 bal = WHITELIST_TOKEN.balanceOf(_user);
+        return bal >= whitelistMin;
+    }
+
+    function manualEndWhitelist() external onlyOwner {
+        require(wl_duration == 0, "Duration set");
+        wl_end = true;
+    }
+
+    function manualEndPublic() external onlyOwner {
+        require(public_duration == 0, "Duration set");
+        public_end = true;
     }
 
     /// @notice Set the token if the token was not set originally
@@ -169,6 +238,22 @@ contract TokenPresale is Ownable, ReentrancyGuard {
             whitelist[_users[i]] = true;
         }
         whitelistedUsers += len;
+    }
+
+    function tokensClaimable() external onlyOwner {
+        require(
+            public_end ||
+                block.timestamp > saleStart + wl_duration + public_duration
+        ); //dev: Sale running
+        require(
+            address(BUY_TOKEN) != address(0) &&
+                BUY_TOKEN.balanceOf(address(this)) > 0
+        ); // dev: no tokens here
+        uint256 current;
+        if (address(RAISE_TOKEN) == address(0)) current = address(this).balance;
+        else current = RAISE_TOKEN.balanceOf(address(this));
+        tokenPerRaise = BUY_TOKEN.balanceOf(address(this)) / current;
+        claimable = true;
     }
 
     /// @notice Withdraw the raised funds
