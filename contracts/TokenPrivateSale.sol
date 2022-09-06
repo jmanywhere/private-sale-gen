@@ -27,7 +27,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
 
     uint256 public immutable wl_duration;
     uint256 public immutable public_duration;
-    uint256 public immutable saleStart;
+    uint256 public saleStart;
 
     bool public wl_end;
     bool public public_end;
@@ -82,7 +82,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         address _owner,
         address _whitelistToken,
         address _collectToken,
-        uint256[8] calldata configs
+        uint256[9] memory configs
     ) {
         require(_owner != address(0)); // dev:  Need a new owner
         transferOwnership(_owner);
@@ -100,8 +100,10 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         require((SOFT_CAP + HARD_CAP) % BASE_INTERVAL == 0, "CF2|3"); //dev: Get good caps, these suck
 
         require(configs[0] > BARE_MIN, "CF0-P"); // dev: Wrong config on 0 pre actually writting the info
-        if (configs[0] >= 0.01 ether) BUY_INTERVAL = 0.01 ether;
-        else BUY_INTERVAL = BARE_MIN;
+        uint256 interval;
+        if (configs[0] >= 0.01 ether) interval = 0.01 ether;
+        else interval = BARE_MIN;
+        BUY_INTERVAL = interval;
         MIN_BUY = configs[0];
         MAX_BUY = configs[1];
         require(MAX_BUY > MIN_BUY, "CF1"); // dev: Max buy is less than min buy
@@ -161,7 +163,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         }
     }
 
-    function checkTimeLimits() internal returns (bool whitelist) {
+    function checkTimeLimits() internal returns (bool) {
         require(block.timestamp > saleStart); // dev: Not started yet
         // if no duration of whitelist added
         if (wl_duration == 0) {
