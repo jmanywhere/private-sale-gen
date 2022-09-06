@@ -139,6 +139,15 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         emit TokenClaimed(msg.sender, claimable);
     }
 
+    function startSale(uint256 _startTimestamp) external onlyOwner {
+        if (_startTimestamp == 0) {
+            saleStart = block.timestamp;
+        } else {
+            require(saleStart == 0 && _startTimestamp > block.timestamp); // dev: Already set
+            saleStart = _startTimestamp;
+        }
+    }
+
     /// @notice Set the token if the token was not set originally
     /// @param _token the address of the new token;
     function setToken(address _token) external onlyOwner {
