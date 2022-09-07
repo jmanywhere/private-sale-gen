@@ -67,7 +67,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
     @param configs The configs array are the following parameters:
     0 - MIN BUY (has to be at least 0.0001 ether, if MIN is larger than 0.01 the min buy threshold is 0.01)
     1 - MAX BUY (if zero there will be no MAX)
-    2 - softcap (can be zero for no soft cap)
+    2 - softcap (can be zero for no soft cap) // TODO will allow people to claim their funds back
     3 - hardcap (can be zero for no cap)
     4 - whitelist token amount to hold for whitelist (if zero the whitelist is not created) IF WHITELIST ADDRESS == ADDRESS(0) 
           then whitelist will need to be added to the mapping
