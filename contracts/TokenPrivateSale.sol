@@ -82,7 +82,8 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         address _owner,
         address _whitelistToken,
         address _collectToken,
-        uint256[9] memory configs
+        uint256[9] memory configs,
+        bool skipWL
     ) {
         require(_owner != address(0)); // dev:  Need a new owner
         transferOwnership(_owner);
@@ -93,6 +94,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
             require(configs[4] > 0, "CF4"); // dev: Wrong config on 4, can't add whitelist token and zero requirement.
             whitelistMin = configs[4];
         }
+        if (skipWL) wl_end = true;
         wl_duration = configs[5] * 1 hours;
         public_duration = configs[7] * 1 hours;
         SOFT_CAP = configs[2];
@@ -171,7 +173,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
     }
 
     function checkTimeLimits() internal returns (bool) {
-        require(block.timestamp > saleStart); // dev: Not started yet
+        require(saleStart > 0 && block.timestamp > saleStart); // dev: Not started yet
         // if no duration of whitelist added
         if (wl_duration == 0) {
             if (wl_end) {
@@ -219,6 +221,9 @@ contract TokenPresale is Ownable, ReentrancyGuard {
     function manualEndWhitelist() external onlyOwner {
         require(wl_duration == 0, "Duration set");
         wl_end = true;
+        if (public_duration > 0) {
+            saleStart = block.timestamp;
+        }
     }
 
     function manualEndPublic() external onlyOwner {
@@ -258,10 +263,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
             address(BUY_TOKEN) != address(0) &&
                 BUY_TOKEN.balanceOf(address(this)) > 0
         ); // dev: no tokens here
-        uint256 current;
-        if (address(RAISE_TOKEN) == address(0)) current = address(this).balance;
-        else current = RAISE_TOKEN.balanceOf(address(this));
-        tokenPerRaise = BUY_TOKEN.balanceOf(address(this)) / current;
+        tokenPerRaise = BUY_TOKEN.balanceOf(address(this)) / totalRaised;
         claimable = true;
     }
 
@@ -279,5 +281,23 @@ contract TokenPresale is Ownable, ReentrancyGuard {
             succ = RAISE_TOKEN.transfer(msg.sender, raised);
         }
         emit FundsClaimed(msg.sender, raised);
+    }
+
+    function saleStatus()
+        external
+        view
+        returns (
+            bool _saleStat,
+            bool _wl,
+            bool _pl
+        )
+    {
+        _saleStat = saleStart > 0 && block.timestamp > saleStart;
+        _wl = wl_duration > 0
+            ? block.timestamp < saleStart + wl_duration
+            : !wl_end;
+        _pl = public_duration > 0 && !wl_end
+            ? block.timestamp < saleStart + wl_duration + public_duration
+            : !public_end;
     }
 }
