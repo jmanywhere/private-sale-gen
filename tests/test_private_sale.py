@@ -60,6 +60,7 @@ def test_start(setup):
             24,  # public duration
             chain.time() + (24 * 60),  # sale start time
         ],
+        False,
         {"from": dev},
     )
     assert presale.owner() == accounts[1]
@@ -94,3 +95,46 @@ def test_start(setup):
     owner_bal = accounts[1].balance()
     presale.withdraw({"from": accounts[1]})
     assert accounts[1].balance() - owner_bal == web3.toWei(10, "ether")
+
+
+def test_config2(setup):
+    (testToken, wlToken, dev, zero) = setup
+
+    presale = TokenPresale.deploy(
+        zero,  # token
+        accounts[1],  # owner
+        wlToken,  # whitelistToken
+        zero,  # token to collect, since zero address use ETH
+        [
+            web3.toWei(0.1, "ether"),  # MIN BUY
+            web3.toWei(2, "ether"),  # MAX BUY
+            web3.toWei(50, "ether"),  # softcap
+            web3.toWei(10, "ether"),  # hardcap
+            web3.toWei(1500, "ether"),  # wl tokens to hold
+            12,  # whitelist duration
+            0,  # tokens to be sold
+            24,  # public duration
+            0,  # sale start time
+        ],
+        False,
+        {"from": dev},
+    )
+
+    chain.mine(10, timedelta=25 * 60)
+    with reverts("dev: Not started yet"):
+        presale.buyToken(0, {"from": accounts[2], "value": web3.toWei(2, "ether")})
+    # start the sale
+    presale.startSale(0, {"from": accounts[1]})
+    chain.mine(1, timedelta=15)
+    with reverts("dev: Not in whitelist"):
+        presale.buyToken(0, {"from": accounts[2], "value": web3.toWei(2, "ether")})
+
+    wlToken.transfer(accounts[2], web3.toWei(1500, "ether"), {"from": dev})
+    presale.buyToken(0, {"from": accounts[2], "value": web3.toWei(2, "ether")})
+
+    u2_info = presale.userInfo(accounts[2])
+    assert u2_info["whitelistBought"] == web3.toWei(2, "ether")
+    assert presale.totalRaised() == web3.toWei(2, "ether")
+    owner_bal = accounts[1].balance()
+    presale.withdraw({"from": accounts[1]})
+    assert accounts[1].balance() - owner_bal == web3.toWei(2, "ether")
