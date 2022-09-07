@@ -61,7 +61,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
 
     /**
     @param _token token address to be distributed. If NO TOKEN YET, send Address(0)
-    @param _owner project owner address
+    @param _owner project owner address (Required)
     @param _whitelistToken token address needed for whitelist
     @param _collectToken token address to be collected (ETH or OTHER) if address == address(0) use native ETH
     @param configs The configs array are the following parameters:
@@ -119,16 +119,19 @@ contract TokenPresale is Ownable, ReentrancyGuard {
             amount = _otherAmount;
         }
 
+        UserInfo storage user = userInfo[msg.sender];
+        uint256 totalBought = user.bought + user.whitelistBought;
         require(
-            amount > 0 && amount % BUY_INTERVAL == 0,
+            amount > 0 &&
+                amount % BUY_INTERVAL == 0 &&
+                totalBought + amount >= MIN_BUY,
             "Amount or Interval invalid"
         );
 
         bool isWhitelist = checkTimeLimits();
 
-        UserInfo storage user = userInfo[msg.sender];
         require(
-            user.bought < MAX_BUY && user.bought + amount <= MAX_BUY,
+            totalBought < MAX_BUY && totalBought + amount <= MAX_BUY,
             "User Cap reached"
         );
         uint256 raised = totalRaised;
@@ -147,9 +150,13 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         require(claimable, "Sale running");
         require(address(BUY_TOKEN) != address(0), "Token not yet available");
         UserInfo storage user = userInfo[msg.sender];
-        require(!user.claimed && user.bought > 0, "Already claimed");
+        require(
+            !user.claimed && (user.bought + user.whitelistBought) > 0,
+            "Already claimed"
+        );
         user.claimed = true;
-        uint256 u_claim = user.bought * tokenPerRaise;
+        uint256 u_claim = user.bought + user.whitelistBought;
+        u_claim *= tokenPerRaise;
         BUY_TOKEN.safeTransfer(msg.sender, u_claim);
         emit TokenClaimed(msg.sender, u_claim);
     }
@@ -180,7 +187,7 @@ contract TokenPresale is Ownable, ReentrancyGuard {
                 }
                 return false;
             } else {
-                require(getWhitelistStatus(msg.sender)); // dev: Not whitelisted
+                require(getWhitelistStatus(msg.sender)); // dev: Not in whitelist
                 return true;
             }
         } else {
