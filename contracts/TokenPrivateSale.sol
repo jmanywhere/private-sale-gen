@@ -293,11 +293,21 @@ contract TokenPresale is Ownable, ReentrancyGuard {
         )
     {
         _saleStat = saleStart > 0 && block.timestamp > saleStart;
-        _wl = wl_duration > 0
-            ? block.timestamp < saleStart + wl_duration
-            : !wl_end;
-        _pl = public_duration > 0 && !wl_end
-            ? block.timestamp < saleStart + wl_duration + public_duration
-            : !public_end;
+        _wl =
+            _saleStat &&
+            (
+                wl_duration > 0
+                    ? block.timestamp < saleStart + wl_duration
+                    : !wl_end
+            );
+        _pl =
+            _saleStat &&
+            !_wl &&
+            (
+                public_duration > 0
+                    ? block.timestamp <
+                        saleStart + wl_duration + public_duration
+                    : !public_end
+            );
     }
 }
